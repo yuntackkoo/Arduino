@@ -6,6 +6,7 @@
 
 #define PORT 255
 #define TOTALL_PACK 33    //총 패킷 사이즈 33Byte
+#define MAX_CLIENT 5
 
 const byte Re_Request = 0;//재요청
 const byte Join = 1;//접속
@@ -23,7 +24,7 @@ const byte Unlock_Other = 64;//다른 사람이 문 열때 서버에서 전송
 
 
 YunServer server(PORT);
-YunClient client;
+YunClient client[MAX_CLIENT];
 
 static boolean clientActive = false;
 char SerialChat;
@@ -70,17 +71,18 @@ void FillSendBuffer(int datasize) {
 	}
 }
 
+void SwitchPacket(YunClient client);
+
 void setup() {
 	Serial.begin(9600);
 	Bridge.begin();
 	server.noListenOnLocalhost();
 	server.begin();
-	client = server.accept();
 	srand((unsigned) time(NULL));
 	randomSeed((unsigned) time(NULL));
-	Angle = 0;
-	servo.attach(7);
-	servo.write(0);
+	for (int i = 0; i < MAX_CLIENT; i++) {
+		client[i] = server.accept();
+	}
 }
 
 int to_int(byte b) {
@@ -92,13 +94,27 @@ void initPacket() {
 }
 
 void loop() {
-	if (client.connected()) {
+	int i = 0;
+	for (i = 0; i < MAX_CLIENT; i++) {
+		if (!client[i].connected()) {
+			client[i] = server.accept();
+		}
+	}
+	for (i = 0; i < MAX_CLIENT; i++) {
+		if (client[i].connected()) {
+			SwitchPacket(&client[i]);
+		}
+	}
+}
+
+void SwitchPacket(YunClient *client) {
+	if (client->connected()) {
 		int i = 0;
 		if (!clientActive) Serial.println("New client connection.");
 		clientActive = true;
 
-		if (client.available()) {
-			while (client.available()) { packetBuffer[i] = client.read(); i++; }
+		if (client->available()) {
+			while (client->available()) { packetBuffer[i] = client->read(); i++; }
 			Parsing(packetBuffer);
 			int _code = to_int(recpacket.code);
 			int _id = to_int(recpacket.id);
@@ -116,9 +132,9 @@ void loop() {
 		if (Serial.available()) {
 			SerialChat = Serial.read();
 			Serial.print(SerialChat);
-			client.print(SerialChat);
+			client->print(SerialChat);
 		}
-		
+
 		switch (recpacket.code)
 		{
 		case Join:
@@ -127,11 +143,10 @@ void loop() {
 			sendpacket.id = 0;
 			sendpacket.seqNum = random();
 			FillSendBuffer(0);
-			client.write(sendBuffer, TOTALL_PACK);
+			client->write(sendBuffer, TOTALL_PACK);
 			Serial.println("Complete Send Packet");
 			Serial.print("Send Seq_Num : ");
 			Serial.println(sendpacket.seqNum);
-			Angle = 45;
 			initPacket();
 			break;
 		case UnLock:
@@ -139,8 +154,8 @@ void loop() {
 		default:
 			break;
 		}
-		
 	}
+	/*
 	else {
 		if (clientActive) {
 			client.stop();
@@ -149,9 +164,5 @@ void loop() {
 		clientActive = false;
 		client = server.accept();
 	}
-	servo.write(Angle);
-	if (Angle > 0) {
-		delay(100);
-		Angle = 0;
-	}
+	*/
 }
