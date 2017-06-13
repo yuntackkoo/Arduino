@@ -43,6 +43,7 @@ Packet recpacket;
 Packet sendpacket;
 Servo servo;
 int Angle;
+boolean active[5];
 
 void Parsing(byte *packet) {
 	int offset = 0;
@@ -71,7 +72,7 @@ void FillSendBuffer(int datasize) {
 	}
 }
 
-void SwitchPacket(YunClient client);
+void SwitchPacket(int number);
 
 void setup() {
 	Serial.begin(9600);
@@ -98,27 +99,30 @@ void loop() {
 	for (i = 0; i < MAX_CLIENT; i++) {
 		if (!client[i].connected()) {
 			client[i] = server.accept();
+			
 		}
 	}
+
 	for (i = 0; i < MAX_CLIENT; i++) {
 		if (client[i].connected()) {
-			SwitchPacket(&client[i]);
+			SwitchPacket(i);
 		}
 	}
 }
 
-void SwitchPacket(YunClient *client) {
-	if (client->connected()) {
+void SwitchPacket(int number) {
+	if (client[number].connected()) {
 		int i = 0;
-		if (!clientActive) Serial.println("New client connection.");
-		clientActive = true;
+		if (!client[number].connected()) {
+			Serial.println("New client connection.");
+		}
 
-		if (client->available()) {
-			while (client->available()) { packetBuffer[i] = client->read(); i++; }
+		if (client[number].available()) {
+			while (client[number].available()) { packetBuffer[i] = client[number].read(); i++; }
 			Parsing(packetBuffer);
 			int _code = to_int(recpacket.code);
 			int _id = to_int(recpacket.id);
-
+			
 			Serial.print("Code : ");
 			Serial.println(_code);
 			Serial.print("Padding Size : ");
@@ -127,42 +131,51 @@ void SwitchPacket(YunClient *client) {
 			Serial.println(recpacket.seqNum, DEC);
 			Serial.print("ID : ");
 			Serial.println(_id);
+			
 		}
 
 		if (Serial.available()) {
 			SerialChat = Serial.read();
 			Serial.print(SerialChat);
-			client->print(SerialChat);
+			client[number].print(SerialChat);
 		}
 
 		switch (recpacket.code)
 		{
 		case Join:
-			Serial.println("Start Send Packet");
+			Serial.println("\n\nStart Send Packet\n");
 			sendpacket.code = Response;
 			sendpacket.id = 0;
 			sendpacket.seqNum = random();
 			FillSendBuffer(0);
-			client->write(sendBuffer, TOTALL_PACK);
+			client[number].write(sendBuffer, TOTALL_PACK);
 			Serial.println("Complete Send Packet");
 			Serial.print("Send Seq_Num : ");
 			Serial.println(sendpacket.seqNum);
-			initPacket();
 			break;
 		case UnLock:
+			sendpacket.code = Unlock_Other;
+			sendpacket.data[0] = 1;
+			sendpacket.data[1] = 1;
+			sendpacket.data[2] = 1;
+			sendpacket.data[3] = 1;
+			sendpacket.data[4] = 1;
+			sendpacket.seqNum = 1;
+			FillSendBuffer(5);
+			for (int i = 0; i < 5; i++) {
+				if (client[i].connected()) {
+					if (i != number) {
+						client[i].write(sendBuffer,TOTALL_PACK);
+					}
+				}
+			}
+			digitalWrite(13, HIGH);
+			delay(1000);
+			digitalWrite(13, LOW);
 			break;
 		default:
 			break;
 		}
+		initPacket();
 	}
-	/*
-	else {
-		if (clientActive) {
-			client.stop();
-			Serial.println("Client disconnected.");
-		}
-		clientActive = false;
-		client = server.accept();
-	}
-	*/
 }
