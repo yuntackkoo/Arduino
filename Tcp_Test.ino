@@ -2,6 +2,7 @@
 #include <Adafruit_CC3000_Server.h>
 #include <ccspi.h>
 #include <SPI.h>
+#include <Adafruit_CC3000_Library-master\utility\socket.h>
 
 #define ADAFRUIT_CC3000_IRQ 7 //인터럽트 컨트롤 핀, Wido 보드 사용시 7로 변경.
 #define ADAFRUIT_CC3000_VBAT 5
@@ -46,15 +47,13 @@ byte packetBuffer[TOTALL_PACK];
 byte sendBuffer[TOTALL_PACK];
 Packet recpacket;
 Packet sendpacket;
-
-
-
-
-
+int sock;
+sockaddr_in server;
+uint32_t ip = 0;
 
 void setup() {
 	Serial.begin(9600);
-
+	uint32_t tmp;
 	SSID = String("iptimer");
 	PASS = String("flyiceball!");
 
@@ -67,8 +66,17 @@ void setup() {
 	}
 
 	wifiScan();
-
 	joinWiFi();
+	
+
+	sock = socket(AF_INET, SOCK_DGRAM, 0);
+	memset(&server, 0, sizeof(server));
+	server.sin_family = AF_INET;
+	server.sin_port = htons(PORT);
+	server.sin_addr.s_addr = ip;
+
+	bind(sock, (sockaddr *)&server, sizeof(server));
+	
 }
 
 void loop() {
@@ -90,7 +98,7 @@ bool displayConnectionDetails(void)
 {
 	uint32_t ipAddress, netmask, gateway, dhcpserv, dnsserv;
 
-	if (!cc3000.getIPAddress(&ipAddress, &netmask, &gateway, &dhcpserv, &dnsserv))
+	if (!cc3000.getIPAddress(&ip, &netmask, &gateway, &dhcpserv, &dnsserv))
 	{
 		Serial.println(F("Unable to retrieve the IP Address!\r\n"));
 		return false;
@@ -203,83 +211,49 @@ void Parsing(byte *packet) {
 }
 
 void SwitchPacket(int number) {
-
 	if (client[number].connected()) {
 
 		int i = 0;
 
 		if (!client[number].connected()) {
-
 			Serial.println("New client connection.");
-
 		}
 
-
-
 		if (client[number].available()) {
-
 			client[number].readBytes(packetBuffer, TOTALL_PACK);
-
 			Parsing(packetBuffer);
-
 			int _code = to_int(recpacket.code);
-
 			int _id = to_int(recpacket.id);
 			Serial.print("Code : ");
-
 			Serial.println(_code);
-
 			Serial.print("Padding Size : ");
-
 			Serial.println(recpacket.paddingSize);
-
 			Serial.print("SeqNum : ");
-
 			Serial.println(recpacket.seqNum, DEC);
-
 			Serial.print("ID : ");
-
 			Serial.println(_id);
 		}
 
 		switch (recpacket.code)
-
 		{
-
 		case Join:
-
 			Serial.println("\n\nStart Send Packet\n");
-
 			sendpacket.code = Response;
-
+			
 			if (recpacket.id < 0) {
-
 				sendpacket.id = recpacket.id;
-
 			}
-
 			else
-
 			{
-
 				sendpacket.id = cuid++;
-
 			}
-
 			sendpacket.seqNum = random();
-
 			seq_num_arr[number] = sendpacket.seqNum;
-
 			FillSendBuffer(0);
-
 			client[number].write(sendBuffer, TOTALL_PACK);
-
 			Serial.println("Complete Send Packet");
-
 			Serial.print("Send Seq_Num : ");
-
 			Serial.println(sendpacket.seqNum);
-
 			break;
 
 		case Key_Ex:
@@ -317,7 +291,6 @@ void SwitchPacket(int number) {
 		initPacket();
 	}
 }
-
 
 
 int to_int(byte b) {
