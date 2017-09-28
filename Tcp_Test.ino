@@ -2,7 +2,6 @@
 #include <Adafruit_CC3000_Server.h>
 #include <ccspi.h>
 #include <SPI.h>
-#include <Adafruit_CC3000_Library-master\utility\socket.h>
 
 #define ADAFRUIT_CC3000_IRQ 7 //인터럽트 컨트롤 핀, Wido 보드 사용시 7로 변경.
 #define ADAFRUIT_CC3000_VBAT 5
@@ -10,7 +9,7 @@
 #define MAX_LENGTH 33
 #define PORT 255
 #define TOTALL_PACK 33    //총 패킷 사이즈 33Byte
-
+#define USER_SIZE 4 //최대 연결 숫자
 
 const byte Re_Request = 0;//재요청
 const byte Join = 1;//접속
@@ -26,8 +25,10 @@ const byte KeyOffer = 62;//키 교환 요구 받을시 키 제공
 const byte Offer_Data = 63;//로그 요청 받을시 로그 응답
 const byte Unlock_Other = 64;//다른 사람이 문 열때 서버에서 전송
 
+int current_user;
 
 Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS, ADAFRUIT_CC3000_IRQ, ADAFRUIT_CC3000_VBAT, SPI_CLOCK_DIVIDER);
+Adafruit_CC3000_Server server = Adafruit_CC3000_Server(PORT);
 
 String SSID;
 String PASS;
@@ -47,15 +48,16 @@ byte packetBuffer[TOTALL_PACK];
 byte sendBuffer[TOTALL_PACK];
 Packet recpacket;
 Packet sendpacket;
-int sock;
-sockaddr_in server;
+
+long seq_num_arr[USER_SIZE];
+
 uint32_t ip = 0;
 
 void setup() {
 	Serial.begin(9600);
-	uint32_t tmp;
 	SSID = String("iptimer");
 	PASS = String("flyiceball!");
+	current_user = 0;
 
 	pinMode(LED_BUILTIN, OUTPUT);
 	//Wi-Fi 연결 시도
@@ -67,16 +69,9 @@ void setup() {
 
 	wifiScan();
 	joinWiFi();
-	
 
-	sock = socket(AF_INET, SOCK_DGRAM, 0);
-	memset(&server, 0, sizeof(server));
-	server.sin_family = AF_INET;
-	server.sin_port = htons(PORT);
-	server.sin_addr.s_addr = ip;
+	server.begin();
 
-	bind(sock, (sockaddr *)&server, sizeof(server));
-	
 }
 
 void loop() {
@@ -91,7 +86,8 @@ void loop() {
 
 		joinWiFi();
 	}
-	delay(1000);
+
+	SwitchPacket();
 }
 
 bool displayConnectionDetails(void)
@@ -105,7 +101,7 @@ bool displayConnectionDetails(void)
 	}
 	else
 	{
-		Serial.print(F("\nIP Addr: ")); cc3000.printIPdotsRev(ipAddress);
+		Serial.print(F("\nIP Addr: ")); cc3000.printIPdotsRev(ip);
 		Serial.print(F("\nNetmask: ")); cc3000.printIPdotsRev(netmask);
 		Serial.print(F("\nGateway: ")); cc3000.printIPdotsRev(gateway);
 		Serial.print(F("\nDHCPsrv: ")); cc3000.printIPdotsRev(dhcpserv);
@@ -208,49 +204,35 @@ void Parsing(byte *packet) {
 	for (int i = 0; i < recpacket.datasize; i++) {
 		recpacket.data[i] = packet[offset++];
 	}
+	
 }
 
-void SwitchPacket(int number) {
-	if (client[number].connected()) {
-
-		int i = 0;
-
-		if (!client[number].connected()) {
-			Serial.println("New client connection.");
-		}
-
-		if (client[number].available()) {
-			client[number].readBytes(packetBuffer, TOTALL_PACK);
-			Parsing(packetBuffer);
-			int _code = to_int(recpacket.code);
-			int _id = to_int(recpacket.id);
-			Serial.print("Code : ");
-			Serial.println(_code);
-			Serial.print("Padding Size : ");
-			Serial.println(recpacket.paddingSize);
-			Serial.print("SeqNum : ");
-			Serial.println(recpacket.seqNum, DEC);
-			Serial.print("ID : ");
-			Serial.println(_id);
-		}
+void SwitchPacket() {
+	int number = server.availableIndex();
+	if (number >= 0) {
+		Adafruit_CC3000_ClientRef client = server.getClientRef(number);
+		client.readBytes(packetBuffer, TOTALL_PACK);
+		Parsing(packetBuffer);
+		int _code = to_int(recpacket.code);
+		int _id = to_int(recpacket.id);
+		Serial.print("Code : ");
+		Serial.println(_code);
+		Serial.print("Padding Size : ");
+		Serial.println(recpacket.paddingSize);
+		Serial.print("SeqNum : ");
+		Serial.println(recpacket.seqNum, DEC);
+		Serial.print("ID : ");
+		Serial.println(_id);
 
 		switch (recpacket.code)
 		{
 		case Join:
 			Serial.println("\n\nStart Send Packet\n");
 			sendpacket.code = Response;
-			
-			if (recpacket.id < 0) {
-				sendpacket.id = recpacket.id;
-			}
-			else
-			{
-				sendpacket.id = cuid++;
-			}
 			sendpacket.seqNum = random();
 			seq_num_arr[number] = sendpacket.seqNum;
 			FillSendBuffer(0);
-			client[number].write(sendBuffer, TOTALL_PACK);
+			client.write(sendBuffer, TOTALL_PACK);
 			Serial.println("Complete Send Packet");
 			Serial.print("Send Seq_Num : ");
 			Serial.println(sendpacket.seqNum);
@@ -258,8 +240,6 @@ void SwitchPacket(int number) {
 
 		case Key_Ex:
 			Serial.println("\n\nStart Send Packet\n");
-			usertable[recpacket.id] = String((char *)recpacket.data);
-			Serial.println(usertable[recpacket.id]);
 			Serial.println(recpacket.datasize);
 			Serial.println("\nStart Show Data");
 			for (int i = 0; i < recpacket.datasize; i++) {
@@ -276,14 +256,7 @@ void SwitchPacket(int number) {
 			sendpacket.data[3] = recpacket.data[3];
 			sendpacket.data[4] = recpacket.id;
 			FillSendBuffer(5);
-			for (int i = 0; i < 5; i++) {
-				if (client[i].connected()) {
-					if (i != number) {
-						sendpacket.seqNum = seq_num_arr[i];
-						client[i].write(sendBuffer, TOTALL_PACK);
-					}
-				}
-			}
+			server.write(sendBuffer, TOTALL_PACK);
 			break;
 		default:
 			break;
@@ -291,7 +264,6 @@ void SwitchPacket(int number) {
 		initPacket();
 	}
 }
-
 
 int to_int(byte b) {
 	return (b & 0xFFFF);
