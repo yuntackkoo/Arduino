@@ -254,8 +254,11 @@ void SwitchPacket() {
 			sendpacket.data[1] = recpacket.data[1];
 			sendpacket.data[2] = recpacket.data[2];
 			sendpacket.data[3] = recpacket.data[3];
-			sendpacket.data[4] = recpacket.id;
-			FillSendBuffer(5);
+			sendpacket.data[4] = recpacket.data[4];
+			sendpacket.data[5] = recpacket.data[5];
+			sendpacket.data[6] = recpacket.data[6];
+			sendpacket.data[7] = recpacket.data[7];
+			FillSendBuffer(8);
 			server.write(sendBuffer, TOTALL_PACK);
 			break;
 		default:
