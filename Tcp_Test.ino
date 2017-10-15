@@ -34,7 +34,7 @@ Adafruit_CC3000_Server server = Adafruit_CC3000_Server(PORT);
 String SSID;
 String PASS;
 
-#define WLAN_SECURITY WLAN_SEC_WPA2
+#define WLAN_SECURITY WLAN_SEC_UNSEC
 
 typedef struct _packet {
 	byte datasize;
@@ -60,7 +60,7 @@ void setup() {
 	servo.write(0);
 	delay(250);
 	servo.detach();
-	SSID = String("iptimer");
+	SSID = String("AndroidHotspot6558");
 	PASS = String("flyiceball!");
 
 	pinMode(LED_BUILTIN, OUTPUT);
