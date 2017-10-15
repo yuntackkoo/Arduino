@@ -2,6 +2,7 @@
 #include <Adafruit_CC3000_Server.h>
 #include <ccspi.h>
 #include <SPI.h>
+#include <Servo.h>
 
 #define ADAFRUIT_CC3000_IRQ 7 //인터럽트 컨트롤 핀, Wido 보드 사용시 7로 변경.
 #define ADAFRUIT_CC3000_VBAT 5
@@ -25,8 +26,8 @@ const byte KeyOffer = 62;//키 교환 요구 받을시 키 제공
 const byte Offer_Data = 63;//로그 요청 받을시 로그 응답
 const byte Unlock_Other = 64;//다른 사람이 문 열때 서버에서 전송
 
-int current_user;
-
+int servoPin = 12;
+Servo servo;
 Adafruit_CC3000 cc3000 = Adafruit_CC3000(ADAFRUIT_CC3000_CS, ADAFRUIT_CC3000_IRQ, ADAFRUIT_CC3000_VBAT, SPI_CLOCK_DIVIDER);
 Adafruit_CC3000_Server server = Adafruit_CC3000_Server(PORT);
 
@@ -55,9 +56,12 @@ uint32_t ip = 0;
 
 void setup() {
 	Serial.begin(9600);
+	servo.attach(servoPin);
+	servo.write(0);
+	delay(250);
+	servo.detach();
 	SSID = String("iptimer");
 	PASS = String("flyiceball!");
-	current_user = 0;
 
 	pinMode(LED_BUILTIN, OUTPUT);
 	//Wi-Fi 연결 시도
@@ -67,11 +71,12 @@ void setup() {
 		while (1);
 	}
 
+
 	wifiScan();
 	joinWiFi();
 
 	server.begin();
-
+	servo.write(0);
 }
 
 void loop() {
@@ -259,7 +264,13 @@ void SwitchPacket() {
 			sendpacket.data[6] = recpacket.data[6];
 			sendpacket.data[7] = recpacket.data[7];
 			FillSendBuffer(8);
+			servo.attach(servoPin);
+			servo.write(80);
 			server.write(sendBuffer, TOTALL_PACK);
+			delay(250);
+			servo.write(0);
+			delay(250);
+			servo.detach();
 			break;
 		default:
 			break;
